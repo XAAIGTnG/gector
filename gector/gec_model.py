@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 from time import time
+import onnxruntime
 
 import torch
 from allennlp.data.dataset import Batch
@@ -33,11 +34,12 @@ class GecBERTModel(object):
                  iterations=3,
                  model_name='roberta',
                  special_tokens_fix=1,
-                 is_ensemble=True,
+                 is_ensemble=False,
                  min_error_probability=0.0,
                  confidence=0,
                  del_confidence=0,
                  resolve_cycles=False,
+                 onnx_paths=None,
                  ):
         self.model_weights = list(map(float, weigths)) if weigths else [1] * len(model_paths)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -52,7 +54,11 @@ class GecBERTModel(object):
         self.del_conf = del_confidence
         self.resolve_cycles = resolve_cycles
         # set training parameters and operations
-
+        self.onnx_paths = onnx_paths
+        if self.onnx_paths:
+            print("ONNX loading...")
+            self.onnx_engine = onnxruntime.InferenceSession(self.onnx_paths, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            print("ONNX loaded.")
         self.indexers = []
         self.models = []
         for model_path in model_paths:
@@ -114,11 +120,32 @@ class GecBERTModel(object):
         predictions = []
         for batch, model in zip(batches, self.models):
             batch = util.move_to_device(batch.as_tensor_dict(), 0 if torch.cuda.is_available() else -1)
-            with torch.no_grad():
-                prediction = model.forward(**batch)
-            predictions.append(prediction)
+            if self.onnx_paths:
+                tokens = batch['tokens']
 
-        preds, idx, error_probs = self._convert(predictions)
+                print('batch:', batch)
+                bert = tokens['bert'].cpu().numpy()
+                bert_offsets = tokens['bert-offsets'].cpu().numpy()
+                mask = tokens['mask'].cpu().numpy()
+                preds, idx, error_probs = self.onnx_engine.run(
+                    None,
+                    input_feed={
+                        'bert': bert,
+                        'bert-offsets': bert_offsets,
+                        'mask': mask
+                    }
+                )
+                print(preds, idx, error_probs)
+            else:
+                # print("bathc:", batch)
+                with torch.no_grad():
+                    prediction = model.forward(**batch)
+                predictions.append(prediction)
+
+                preds, idx, error_probs = self._convert(predictions)
+                # print(preds, idx, error_probs)
+
+        preds, idx, error_probs = preds.tolist(), idx.tolist(), error_probs.tolist()
         t55 = time()
         if self.log:
             print(f"Inference time {t55 - t11}")
@@ -194,9 +221,9 @@ class GecBERTModel(object):
             error_probs += weight * output['max_error_probability'] / sum(self.model_weights)
 
         max_vals = torch.max(all_class_probs, dim=-1)
-        probs = max_vals[0].tolist()
-        idx = max_vals[1].tolist()
-        return probs, idx, error_probs.tolist()
+        probs = max_vals[0]
+        idx = max_vals[1]
+        return probs, idx, error_probs
 
     def update_final_batch(self, final_batch, pred_ids, pred_batch,
                            prev_preds_dict):

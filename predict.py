@@ -40,11 +40,12 @@ def main(args):
                          lowercase_tokens=args.lowercase_tokens,
                          model_name=args.transformer_model,
                          special_tokens_fix=args.special_tokens_fix,
-                         log=False,
+                         log=True,
                          confidence=args.additional_confidence,
                          del_confidence=args.additional_del_confidence,
                          is_ensemble=args.is_ensemble,
-                         weigths=args.weights)
+                         weigths=args.weights,
+                         onnx_paths=args.onnx_paths)
 
     cnt_corrections = predict_for_file(args.input_file, args.output_file, model,
                                        batch_size=args.batch_size, 
@@ -82,7 +83,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size',
                         type=int,
                         help='The size of hidden unit cell.',
-                        default=128)
+                        default=1)
     parser.add_argument('--lowercase_tokens',
                         type=int,
                         help='Whether to lowercase tokens.',
@@ -124,5 +125,8 @@ if __name__ == '__main__':
     parser.add_argument('--normalize',
                         help='Use for text simplification.',
                         action='store_true')
+    parser.add_argument('--onnx_paths',
+                        help='onnx path for inference. ',
+                        default=None)
     args = parser.parse_args()
     main(args)

@@ -129,6 +129,14 @@ class Seq2Labels(Model):
             A scalar loss to be optimised.
 
         """
+        #@lihao============================================================================
+        # print("tokens: ", tokens)
+        # print("labels: ", labels)
+        # print("d_tags: ", d_tags)
+        # print("metadata: ", metadata)
+        #@lihao============================================================================
+
+
         encoded_text = self.text_field_embedder(tokens)
         batch_size, sequence_length, _ = encoded_text.size()
         mask = get_text_field_mask(tokens)
