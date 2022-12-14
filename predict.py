@@ -1,4 +1,5 @@
 import argparse
+import time
 
 from utils.helpers import read_lines, normalize
 from gector.gec_model import GecBERTModel
@@ -9,6 +10,7 @@ def predict_for_file(input_file, output_file, model, batch_size=32, to_normalize
     predictions = []
     cnt_corrections = 0
     batch = []
+    time1 = time.time()
     for sent in test_data:
         batch.append(sent.split())
         if len(batch) == batch_size:
@@ -20,7 +22,8 @@ def predict_for_file(input_file, output_file, model, batch_size=32, to_normalize
         preds, cnt = model.handle_batch(batch)
         predictions.extend(preds)
         cnt_corrections += cnt
-
+    time2 = time.time()
+    # print("Total time: {:.5f}".format(time2-time1))
     result_lines = [" ".join(x) for x in predictions]
     if to_normalize:
         result_lines = [normalize(line) for line in result_lines]
@@ -92,7 +95,7 @@ if __name__ == '__main__':
                         choices=['bert', 'gpt2', 'transformerxl', 'xlnet', 'distilbert', 'roberta', 'albert'
                                  'bert-large', 'roberta-large', 'xlnet-large'],
                         help='Name of the transformer model.',
-                        default='roberta')
+                        default='xlnet')
     parser.add_argument('--iteration_count',
                         type=int,
                         help='The number of iterations of the model.',
@@ -114,7 +117,7 @@ if __name__ == '__main__':
                         type=int,
                         help='Whether to fix problem with [CLS], [SEP] tokens tokenization. '
                              'For reproducing reported results it should be 0 for BERT/XLNet and 1 for RoBERTa.',
-                        default=1)
+                        default=0)
     parser.add_argument('--is_ensemble',
                         type=int,
                         help='Whether to do ensembling.',
@@ -125,7 +128,7 @@ if __name__ == '__main__':
     parser.add_argument('--normalize',
                         help='Use for text simplification.',
                         action='store_true')
-    parser.add_argument('--onnx_paths',
+    parser.add_argument('--onnx_paths', nargs='+',
                         help='onnx path for inference. ',
                         default=None)
     args = parser.parse_args()

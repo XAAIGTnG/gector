@@ -54,11 +54,17 @@ class GecBERTModel(object):
         self.del_conf = del_confidence
         self.resolve_cycles = resolve_cycles
         # set training parameters and operations
-        self.onnx_paths = onnx_paths
-        if self.onnx_paths:
+        # self.onnx_paths = onnx_paths
+        self.onnxes = []
+        if onnx_paths:
             print("ONNX loading...")
-            self.onnx_engine = onnxruntime.InferenceSession(self.onnx_paths, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+            for onnx_path in onnx_paths:
+                onnx_engine = onnxruntime.InferenceSession(onnx_path, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                self.onnxes.append(onnx_engine)
             print("ONNX loaded.")
+        if not self.onnxes:
+            self.onnxes = [None for _ in model_paths]
+
         self.indexers = []
         self.models = []
         for model_path in model_paths:
@@ -118,16 +124,16 @@ class GecBERTModel(object):
     def predict(self, batches):
         t11 = time()
         predictions = []
-        for batch, model in zip(batches, self.models):
+        for batch, model, onnx in zip(batches, self.models, self.onnxes):
             batch = util.move_to_device(batch.as_tensor_dict(), 0 if torch.cuda.is_available() else -1)
-            if self.onnx_paths:
+            if onnx:
                 tokens = batch['tokens']
 
-                print('batch:', batch)
+                # print('batch:', batch)
                 bert = tokens['bert'].cpu().numpy()
                 bert_offsets = tokens['bert-offsets'].cpu().numpy()
                 mask = tokens['mask'].cpu().numpy()
-                preds, idx, error_probs = self.onnx_engine.run(
+                class_probabilities_labels, max_error_probability = onnx.run(
                     None,
                     input_feed={
                         'bert': bert,
@@ -135,20 +141,25 @@ class GecBERTModel(object):
                         'mask': mask
                     }
                 )
-                print(preds, idx, error_probs)
+                prediction = {
+                    'class_probabilities_labels': torch.tensor(class_probabilities_labels),
+                    'max_error_probability': torch.tensor(max_error_probability)
+                    }
+                predictions.append(prediction)
+                # print(preds, idx, error_probs)
             else:
                 # print("bathc:", batch)
                 with torch.no_grad():
                     prediction = model.forward(**batch)
                 predictions.append(prediction)
-
-                preds, idx, error_probs = self._convert(predictions)
-                # print(preds, idx, error_probs)
+        t44 = time()
+        preds, idx, error_probs = self._convert(predictions)
+        # print(preds, idx, error_probs)
 
         preds, idx, error_probs = preds.tolist(), idx.tolist(), error_probs.tolist()
         t55 = time()
         if self.log:
-            print(f"Inference time {t55 - t11}")
+            print(f"Inference time {t44 - t11}")
         return preds, idx, error_probs
 
     def get_token_action(self, token, index, prob, sugg_token):
